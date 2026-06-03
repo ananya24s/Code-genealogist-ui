@@ -96,7 +96,7 @@ export default function App() {
 
   const exchangeCodeForToken = async (code) => {
     try {
-      const response = await fetch('http://localhost:8000/auth/callback', {
+      const response = await fetch('https://codegenealogist.onrender.com/auth/callback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code })
@@ -172,7 +172,7 @@ export default function App() {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('http://localhost:8000/analyze', {
+      const response = await fetch('https://codegenealogist.onrender.com/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
