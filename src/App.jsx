@@ -4,6 +4,7 @@ import logoHorizontal from './assets/logo-horizontal.jpeg';
 import logoIcon from './assets/logo-icon.jpeg';
 import './App.css';
 import Landing from './Landing';
+import RepoExplorer from './RepoExplorer';
 
 const GITHUB_CLIENT_ID = import.meta.env.VITE_GITHUB_CLIENT_ID;
 const CALLBACK_URL = import.meta.env.VITE_GITHUB_CALLBACK_URL;
@@ -151,7 +152,13 @@ export default function App() {
   const handleSelectRepo = (repo) => {
     setSelectedRepo(repo);
     setRepoUrl(repo.clone_url);
-    setStep('form');
+    setStep('explore');
+  };
+
+  const handleFunctionSelected = ({ filePath: selectedFilePath, functionName: selectedFunctionName }) => {
+    setFilePath(selectedFilePath);
+    setFunctionName(selectedFunctionName);
+    handleAnalyze(selectedFilePath, selectedFunctionName);
   };
 
   const handleLogout = () => {
@@ -163,12 +170,15 @@ export default function App() {
     setStep('repos');
   };
 
-  const handleAnalyze = async () => {
-    if (!repoUrl || !filePath || !functionName) {
+  const handleAnalyze = async (overrideFilePath, overrideFunctionName) => {
+    const targetFilePath = overrideFilePath ?? filePath;
+    const targetFunctionName = overrideFunctionName ?? functionName;
+
+    if (!repoUrl || !targetFilePath || !targetFunctionName) {
       setError('Please fill all fields');
       return;
     }
-    
+
     setLoading(true);
     setError('');
     try {
@@ -177,8 +187,8 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           repo_url: repoUrl,
-          file_path: filePath,
-          function_name: functionName
+          file_path: targetFilePath,
+          function_name: targetFunctionName
         })
       });
       
@@ -277,8 +287,8 @@ export default function App() {
     );
   }
 
-  // FORM VIEW
-  if (step === 'form') {
+  // EXPLORE VIEW
+  if (step === 'explore') {
     return (
       <div className="app-container">
         <header className="app-header">
@@ -295,89 +305,36 @@ export default function App() {
         </header>
 
         <main className="app-main">
-          <div className="form-container">
-            <div className="form-header">
-              <button className="back-link" onClick={() => setStep('repos')}>
-                <ChevronRight size={18} style={{transform: 'rotate(180deg)'}} />
-                Back to Repositories
-              </button>
-              <h1>Analyze Function</h1>
-              <p className="form-subtitle">{selectedRepo?.name}</p>
+          <button className="back-link" onClick={() => setStep('repos')} style={{margin: '24px 0 0 40px'}}>
+            <ChevronRight size={18} style={{transform: 'rotate(180deg)'}} />
+            Back to Repositories
+          </button>
+
+          {error && (
+            <div className="error-message" style={{margin: '16px 40px 0 40px'}}>
+              <span>⚠️</span>
+              <span>{error}</span>
             </div>
+          )}
 
-            <div className="form-card">
-              <div className="form-group">
-                <label htmlFor="repoUrl">Repository URL</label>
-                <input
-                  id="repoUrl"
-                  type="text"
-                  value={repoUrl}
-                  disabled
-                  className="form-input disabled"
-                />
+          <RepoExplorer
+            repo={selectedRepo}
+            token={localStorage.getItem('github_token')}
+            onFunctionSelected={handleFunctionSelected}
+          />
+        </main>
+
+        {loading && (
+          <div className="loading-overlay">
+            <div className="loading-content">
+              <img src={logoIcon} alt="Loading" className="loading-icon" />
+              <div className="loading-text">
+                <p>Analyzing repository...</p>
+                <p className="loading-subtext">Classifying changes & generating insights...</p>
               </div>
-
-              <div className="form-group">
-                <label htmlFor="filePath">
-                  File Path
-                  <span className="required">*</span>
-                </label>
-                <input
-                  id="filePath"
-                  type="text"
-                  placeholder="e.g., src/utils/helpers.ts"
-                  value={filePath}
-                  onChange={(e) => setFilePath(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleAnalyze()}
-                  className="form-input"
-                />
-                <p className="form-hint">Enter the relative path to the file within the repository</p>
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="functionName">
-                  Function Name
-                  <span className="required">*</span>
-                </label>
-                <input
-                  id="functionName"
-                  type="text"
-                  placeholder="e.g., calculateTotal"
-                  value={functionName}
-                  onChange={(e) => setFunctionName(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleAnalyze()}
-                  className="form-input"
-                />
-                <p className="form-hint">The exact name of the function you want to analyze</p>
-              </div>
-
-              {error && (
-                <div className="error-message">
-                  <span>⚠️</span>
-                  <span>{error}</span>
-                </div>
-              )}
-
-              <button
-                className="analyze-btn"
-                onClick={handleAnalyze}
-                disabled={loading || !filePath || !functionName}
-              >
-                {loading ? (
-                  <>
-                    <span className="spinner"></span>
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    Analyze Function
-                    <ChevronRight size={18} />
-                  </>
-                )}
-              </button>
             </div>
           </div>
-        </main>
+        )}
       </div>
     );
   }
