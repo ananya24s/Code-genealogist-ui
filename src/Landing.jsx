@@ -1,230 +1,356 @@
-import React from 'react';
-import { GitBranch, Clock, Zap, Eye, RefreshCw, Boxes, ChevronRight } from 'lucide-react';
-import logoHorizontal from './assets/logo-horizontal.jpeg';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { GitBranch, Clock, Zap, Eye, RefreshCw, Boxes, ChevronUp, ChevronDown } from 'lucide-react';
 import './Landing.css';
 
+const CORE_SAMPLE = [
+  { depth: '00.0m', type: 'CREATED', tone: 'cyan', note: 'Initial implementation committed.' },
+  { depth: '01.4m', type: 'BUG FIX', tone: 'copper', note: 'Off-by-one error corrected in loop bound.' },
+  { depth: '02.9m', type: 'REFACTOR', tone: 'amber', note: 'Reduced overhead 85% through caching logic.' },
+  { depth: '04.1m', type: 'CURRENT', tone: 'bright', note: 'Stable — no open regressions.' },
+];
+
+const STEPS = [
+  { ref: 'REF 01', title: 'Connect GitHub', body: 'Authenticate with OAuth — no credentials stored.' },
+  { ref: 'REF 02', title: 'Select repository', body: 'Choose any repo your account can access.' },
+  { ref: 'REF 03', title: 'Pick a function', body: 'Browse real files and functions — no guessing.' },
+  { ref: 'REF 04', title: 'Read the lineage', body: 'Full history, annotated and explained by AI.' },
+];
+
+const FEATURES = [
+  { icon: GitBranch, code: 'SPEC-01', title: 'Git History', body: 'Traverse every commit that touched your function.' },
+  { icon: Clock, code: 'SPEC-02', title: 'Evolution Timeline', body: 'A measured cross-section of how code changed.' },
+  { icon: Zap, code: 'SPEC-03', title: 'AI Insights', body: 'Understand why changes were made, not just what.' },
+  { icon: RefreshCw, code: 'SPEC-04', title: 'Refactor Detection', body: 'Identify renames, splits, architectural shifts.' },
+  { icon: Eye, code: 'SPEC-05', title: 'Side-by-side Diffs', body: 'Compare versions instantly with full context.' },
+  { icon: Boxes, code: 'SPEC-06', title: 'GitHub Integration', body: 'Works with any repository you can access.' },
+];
+
+const SHEETS = [
+  { id: 'title', no: '01', name: 'TITLE' },
+  { id: 'specimen', no: '02', name: 'SPECIMEN' },
+  { id: 'procedure', no: '03', name: 'PROCEDURE' },
+  { id: 'spec', no: '04', name: 'SPECIFICATION' },
+  { id: 'signoff', no: '05', name: 'SIGN-OFF' },
+];
+
+const DEMO_VERSIONS = [
+  { tag: 'v0', lines: [[' ', 'function score(user) {'], ['+', '  return user.points'], [' ', '}']] },
+  { tag: 'v1', lines: [[' ', 'function score(user) {'], ['-', '  return user.points'], ['+', '  return user.points * user.mult'], [' ', '}']] },
+  { tag: 'v2', lines: [[' ', 'function score(user) {'], [' ', '  return user.points * user.mult'], ['+', '  // memoized — see cache.js'], [' ', '}']] },
+];
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setReduced(mq.matches);
+    const handler = (e) => setReduced(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+  return reduced;
+}
+
+function LineageMark({ size = 26 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6" cy="18" r="2" />
+      <circle cx="18" cy="18" r="2" />
+      <circle cx="12" cy="6" r="2" />
+      <path d="M6 16v-2a2 2 0 0 1 2-2h2" />
+      <path d="M18 16v-2a2 2 0 0 0-2-2h-2" />
+      <path d="M12 8v2" />
+    </svg>
+  );
+}
+
+function SheetLabel({ no, name, active }) {
+  return (
+    <div className={`sheet-label ${active ? 'is-active' : ''}`}>
+      <span className="sheet-no">SHEET {no}</span>
+      <span className="sheet-name">{name}</span>
+      <span className="sheet-of">OF 05</span>
+      <span className="sheet-label-rule" aria-hidden="true" />
+    </div>
+  );
+}
+
+function FunctionEvolutionDemo({ isActive, reducedMotion }) {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    if (reducedMotion || !isActive) return undefined;
+    const id = setInterval(() => {
+      setIndex((i) => (i + 1) % DEMO_VERSIONS.length);
+    }, 3200);
+    return () => clearInterval(id);
+  }, [isActive, reducedMotion]);
+
+  const shownIndex = reducedMotion ? DEMO_VERSIONS.length - 1 : index;
+  const version = DEMO_VERSIONS[shownIndex];
+
+  return (
+    <div className="demo-panel" aria-hidden="true">
+      <div className="demo-panel-head">
+        <span>FIG. 02 — LIVE DIFF</span>
+        <span className="demo-tag">{version.tag}</span>
+      </div>
+      <pre className="demo-code" key={shownIndex}>
+        {version.lines.map(([marker, code], i) => (
+          <div key={i} className={`demo-line demo-line--${marker === '+' ? 'add' : marker === '-' ? 'del' : 'ctx'}`}>
+            <span className="demo-marker">{marker}</span>{code}
+          </div>
+        ))}
+      </pre>
+    </div>
+  );
+}
+
+function TransitionDiff({ badge }) {
+  if (!badge) return null;
+  return (
+    <div className={`diff-badge ${badge.dir > 0 ? 'add' : 'del'}`} aria-hidden="true">
+      {badge.dir > 0 ? '+' : '−'} SHEET {badge.no}
+    </div>
+  );
+}
+
 export default function Landing({ onLogin }) {
-  const scrollToSection = (id) => {
-    const element = document.getElementById(id);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
+  const [active, setActive] = useState('title');
+  const [badge, setBadge] = useState(null);
+  const sheetRefs = useRef({});
+  const prevActiveRef = useRef('title');
+  const badgeTimeoutRef = useRef(null);
+  const reducedMotion = usePrefersReducedMotion();
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+            setActive(entry.target.dataset.sheet);
+          }
+        });
+      },
+      { threshold: [0.5] }
+    );
+    Object.values(sheetRefs.current).forEach((el) => el && observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const prevIndex = SHEETS.findIndex((s) => s.id === prevActiveRef.current);
+    const nextIndex = SHEETS.findIndex((s) => s.id === active);
+    if (prevIndex !== nextIndex && prevIndex !== -1 && !reducedMotion) {
+      clearTimeout(badgeTimeoutRef.current);
+      setBadge({ dir: nextIndex - prevIndex, no: SHEETS[nextIndex].no });
+      badgeTimeoutRef.current = setTimeout(() => setBadge(null), 1000);
     }
+    prevActiveRef.current = active;
+    return () => clearTimeout(badgeTimeoutRef.current);
+  }, [active, reducedMotion]);
+
+  const goTo = useCallback((id) => {
+    sheetRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  const activeIndex = SHEETS.findIndex((s) => s.id === active);
+
+  const goRelative = (delta) => {
+    const next = SHEETS[activeIndex + delta];
+    if (next) goTo(next.id);
   };
+
+  const setSheetRef = (id) => (el) => {
+    sheetRefs.current[id] = el;
+  };
+
+  const contentClass = (id) => `sheet-content ${active === id ? 'is-active' : ''}`;
 
   return (
     <div className="landing">
-      {/* Navigation Header */}
+      <div className="reg-mark reg-mark--tl" aria-hidden="true" />
+      <div className="reg-mark reg-mark--tr" aria-hidden="true" />
+      <div className="reg-mark reg-mark--bl" aria-hidden="true" />
+      <div className="reg-mark reg-mark--br" aria-hidden="true" />
+
       <header className="landing-header">
         <div className="header-content">
-          <img src={logoHorizontal} alt="Code Genealogist" className="navbar-logo" />
-          <nav className="nav-menu">
-            <button 
-              className="nav-link"
-              onClick={() => scrollToSection('features')}
-            >
-              Features
-            </button>
-            <button 
-              className="nav-link"
-              onClick={() => scrollToSection('how-it-works')}
-            >
-              How It Works
-            </button>
-            <button 
-              className="nav-cta"
-              onClick={onLogin}
-            >
-              Start Analyzing
-            </button>
+          <div className="brand">
+            <span className="brand-mark"><LineageMark /></span>
+            <span className="brand-text">Code<br />Genealogist</span>
+          </div>
+
+          <nav className="sheet-index">
+            {SHEETS.map((s) => (
+              <button
+                key={s.id}
+                className={`sheet-index-item ${active === s.id ? 'active' : ''}`}
+                onClick={() => goTo(s.id)}
+                title={s.name}
+              >
+                {s.no}
+              </button>
+            ))}
           </nav>
+
+          <button className="btn btn-primary nav-cta" onClick={onLogin}>Start Analyzing</button>
         </div>
       </header>
 
-      {/* Hero Section */}
-      <section className="landing-hero">
-        <div className="hero-container">
-          <div className="hero-content">
-            <h1 className="hero-headline">
-              Understand why<br />your code evolved
-            </h1>
-            
-            <p className="hero-description">
-              Trace every decision behind your functions. See the full story of how code changed across commits with AI-powered insights.
-            </p>
+      <div className="sheets">
+        {/* SHEET 01 — TITLE */}
+        <section className="sheet" data-sheet="title" ref={setSheetRef('title')}>
+          <SheetLabel no="01" name="TITLE" active={active === 'title'} />
+          <div className={contentClass('title')}>
+            <div className="title-sheet">
+              <div className="title-copy">
+                <span className="eyebrow">FIG. 01 — FUNCTION LINEAGE</span>
+                <h1 className="hero-headline">Understand why<br />your code evolved</h1>
+                <p className="hero-description">
+                  Trace every decision behind your functions. See the full story of how code
+                  changed across commits, measured and annotated with AI-powered insight.
+                </p>
+                <div className="cta-section">
+                  <button className="btn btn-primary" onClick={onLogin}>Explore Code History</button>
+                  <p className="cta-supporting">Securely connect GitHub. Public and private repositories.</p>
+                </div>
+                <FunctionEvolutionDemo isActive={active === 'title'} reducedMotion={reducedMotion} />
+              </div>
 
-            <div className="cta-section">
-              <button className="cta-button primary" onClick={onLogin}>
-                Explore Code History
-              </button>
-              <p className="cta-supporting">
-                Securely connect your GitHub account. Works with public and private repositories.
-              </p>
+              <div className="title-diagram" aria-hidden="true">
+                <div className="mark-detail">
+                  <LineageMark size={130} />
+                  <div className="mark-callout mark-callout--a"><span />NODE</div>
+                  <div className="mark-callout mark-callout--b"><span />BRANCH</div>
+                  <div className="mark-callout mark-callout--c"><span />ROOT COMMIT</div>
+                </div>
+              </div>
             </div>
           </div>
+        </section>
 
-          {/* Demo Card */}
-          <div className="demo-card">
-            <div className="demo-label">Real example</div>
-            <div className="demo-function">calculateUserScore()</div>
-            
-            <div className="demo-timeline">
-              <div className="timeline-item">
-                <div className="timeline-marker created"></div>
-                <div>Created</div>
+        {/* SHEET 02 — SPECIMEN */}
+        <section className="sheet" data-sheet="specimen" ref={setSheetRef('specimen')}>
+          <SheetLabel no="02" name="SPECIMEN" active={active === 'specimen'} />
+          <div className={contentClass('specimen')}>
+            <div className="specimen-sheet">
+              <p className="sheet-intro">Every function has a history. Here's how we read it.</p>
+              <div className="core-sample core-sample--large">
+                <div className="core-sample-head">
+                  <span className="core-sample-label">CORE SAMPLE</span>
+                  <span className="core-sample-fn">calculateUserScore()</span>
+                </div>
+                <div className="core-sample-body">
+                  <div className="depth-rule">
+                    {CORE_SAMPLE.map((s) => (
+                      <span key={s.depth} className="depth-tick">{s.depth}</span>
+                    ))}
+                  </div>
+                  <div className="strata">
+                    {CORE_SAMPLE.map((s, i) => (
+                      <div
+                        key={s.type}
+                        className={`stratum tone-${s.tone}`}
+                        style={{ '--stagger-delay': `${0.15 + i * 0.2}s` }}
+                      >
+                        <div className="stratum-band" />
+                        <div className="stratum-callout">
+                          <div className="stratum-leader" />
+                          <div className="stratum-text">
+                            <span className="stratum-type">{s.type}</span>
+                            <p>{s.note}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <div className="timeline-connector"></div>
-              <div className="timeline-item">
-                <div className="timeline-marker fixed"></div>
-                <div>Bug Fix</div>
-              </div>
-              <div className="timeline-connector"></div>
-              <div className="timeline-item">
-                <div className="timeline-marker refactor"></div>
-                <div>Refactor</div>
-              </div>
-              <div className="timeline-connector"></div>
-              <div className="timeline-item">
-                <div className="timeline-marker current"></div>
-                <div>Current</div>
-              </div>
-            </div>
-
-            <div className="demo-insight">
-              <div className="insight-header">
-                <span>AI Insight</span>
-                <span className="confidence-badge">95%</span>
-              </div>
-              <p>Refactored for performance. Reduced overhead by 85% through caching logic.</p>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* How It Works Section */}
-      <section className="how-it-works" id="how-it-works">
-        <div className="section-container">
-          <div className="section-header">
-            <h2>Get started in seconds</h2>
-            <p>Four simple steps to understand your code's evolution</p>
-          </div>
-
-          <div className="workflow-steps">
-            <div className="workflow-step">
-              <div className="step-number">1</div>
-              <h3>Connect GitHub</h3>
-              <p>Securely authenticate with your GitHub account using OAuth.</p>
-            </div>
-
-            <div className="step-connector">
-              <ChevronRight size={20} />
-            </div>
-
-            <div className="workflow-step">
-              <div className="step-number">2</div>
-              <h3>Select Repository</h3>
-              <p>Choose any repository from your GitHub account to analyze.</p>
-            </div>
-
-            <div className="step-connector">
-              <ChevronRight size={20} />
-            </div>
-
-            <div className="workflow-step">
-              <div className="step-number">3</div>
-              <h3>Choose Function</h3>
-              <p>Enter the file path and function name you want to understand.</p>
-            </div>
-
-            <div className="step-connector">
-              <ChevronRight size={20} />
-            </div>
-
-            <div className="workflow-step">
-              <div className="step-number">4</div>
-              <h3>Explore Evolution</h3>
-              <p>View the complete history with AI-generated insights and explanations.</p>
+        {/* SHEET 03 — PROCEDURE */}
+        <section className="sheet" data-sheet="procedure" ref={setSheetRef('procedure')}>
+          <SheetLabel no="03" name="PROCEDURE" active={active === 'procedure'} />
+          <div className={contentClass('procedure')}>
+            <div className="procedure-sheet">
+              <div className="section-header">
+                <h2>Get started in seconds</h2>
+                <p>Four steps to your function's full lineage</p>
+              </div>
+              <div className="schematic">
+                <div className="schematic-line" aria-hidden="true" />
+                {STEPS.map((step, i) => (
+                  <div className="schematic-step" key={step.ref} style={{ transitionDelay: `${0.1 + i * 0.12}s` }}>
+                    <span className="step-tag">{step.ref}</span>
+                    <h3>{step.title}</h3>
+                    <p>{step.body}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Features Section */}
-      <section className="features-section" id="features">
-        <div className="section-container">
-          <div className="section-header">
-            <h2>Powerful analysis built in</h2>
-            <p>Everything you need to understand code evolution</p>
-          </div>
-
-          <div className="features-grid">
-            <div className="feature-card">
-              <div className="feature-icon">
-                <GitBranch size={24} />
+        {/* SHEET 04 — SPECIFICATION */}
+        <section className="sheet" data-sheet="spec" ref={setSheetRef('spec')}>
+          <SheetLabel no="04" name="SPECIFICATION" active={active === 'spec'} />
+          <div className={contentClass('spec')}>
+            <div className="spec-sheet">
+              <div className="section-header">
+                <h2>Powerful analysis built in</h2>
+                <p>Everything you need to understand code evolution</p>
               </div>
-              <h3>Git History</h3>
-              <p>Traverse every commit that touched your function with complete context.</p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">
-                <Clock size={24} />
+              <div className="features-grid">
+                {FEATURES.map((f, i) => (
+                  <div className="spec-card" key={f.code} style={{ transitionDelay: `${(i % 3) * 0.08}s` }}>
+                    <span className="spec-bracket spec-bracket--tl" />
+                    <span className="spec-bracket spec-bracket--br" />
+                    <div className="spec-icon"><f.icon size={18} /></div>
+                    <span className="spec-code">{f.code}</span>
+                    <h3>{f.title}</h3>
+                    <p>{f.body}</p>
+                  </div>
+                ))}
               </div>
-              <h3>Evolution Timeline</h3>
-              <p>Visual timeline showing exactly how code changed across time.</p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">
-                <Zap size={24} />
-              </div>
-              <h3>AI Insights</h3>
-              <p>Understand why changes were made with AI-powered explanations.</p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">
-                <RefreshCw size={24} />
-              </div>
-              <h3>Refactor Detection</h3>
-              <p>Automatically identify renames, splits, and architectural shifts.</p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">
-                <Eye size={24} />
-              </div>
-              <h3>Side-by-side Diffs</h3>
-              <p>Compare versions instantly with syntax highlighting and context.</p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">
-                <Boxes size={24} />
-              </div>
-              <h3>GitHub Integration</h3>
-              <p>Works seamlessly with any public or private GitHub repository.</p>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Final CTA Section */}
-      <section className="final-cta">
-        <div className="section-container">
-          <h2>Ready to explore your code's story?</h2>
-          <p>Start analyzing your repositories today. No credit card required.</p>
-          <button className="cta-button primary large" onClick={onLogin}>
-            Start Analyzing
-          </button>
-        </div>
-      </section>
+        {/* SHEET 05 — SIGN-OFF */}
+        <section className="sheet" data-sheet="signoff" ref={setSheetRef('signoff')}>
+          <SheetLabel no="05" name="SIGN-OFF" active={active === 'signoff'} />
+          <div className={contentClass('signoff')}>
+            <div className="signoff-sheet">
+              <div className="stamp">READY FOR ANALYSIS</div>
+              <h2>Ready to explore your code's story?</h2>
+              <p>Start analyzing your repositories today. No credit card required.</p>
+              <button className="btn btn-primary btn-large" onClick={onLogin}>Start Analyzing</button>
 
-      {/* Footer */}
-      <footer className="landing-footer">
-        <div className="section-container">
-          <p>Built for developers who care about code quality and understanding.</p>
-        </div>
-      </footer>
+              <div className="title-block">
+                <span><strong>DWG</strong> CODE-GENEALOGIST</span>
+                <span><strong>REV</strong> 1.0</span>
+                <span><strong>SCALE</strong> 1:1</span>
+                <span><strong>DRAWN</strong> A. SINGH</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <TransitionDiff badge={badge} />
+
+      <div className="page-controls">
+        <button className="page-nav-btn" onClick={() => goRelative(-1)} disabled={activeIndex <= 0} aria-label="Previous sheet">
+          <ChevronUp size={15} />
+        </button>
+        <span className="page-count">{String(activeIndex + 1).padStart(2, '0')} / 05</span>
+        <button className="page-nav-btn" onClick={() => goRelative(1)} disabled={activeIndex >= SHEETS.length - 1} aria-label="Next sheet">
+          <ChevronDown size={15} />
+        </button>
+      </div>
     </div>
   );
 }
