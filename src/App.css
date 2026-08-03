@@ -171,6 +171,95 @@ body {
   padding: 40px;
 }
 
+/* === AUTHENTICATING SCREEN === */
+.auth-loading {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background-color: var(--bg-primary);
+  background-image:
+    linear-gradient(var(--bp-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bp-grid) 1px, transparent 1px);
+  background-size: 42px 42px;
+}
+
+.auth-loading-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  max-width: 360px;
+  padding: 40px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color-strong);
+}
+
+.auth-loading-mark {
+  color: var(--bp-cyan);
+  margin-bottom: 8px;
+}
+
+.auth-loading-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.auth-loading-title--error {
+  color: var(--danger);
+}
+
+.auth-loading-sub {
+  font-family: var(--bp-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.auth-retry-btn {
+  font-family: var(--bp-mono);
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 10px 22px;
+  background: transparent;
+  border: 1px solid var(--border-color-strong);
+  color: var(--bp-cyan);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.auth-retry-btn:hover {
+  border-color: var(--bp-cyan);
+  background: rgba(94, 234, 212, 0.06);
+}
+
+.scanning-bar {
+  position: relative;
+  width: 100px;
+  height: 2px;
+  background: var(--border-color-strong);
+  overflow: hidden;
+}
+
+.scanning-bar-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 35%;
+  height: 100%;
+  background: var(--bp-cyan);
+  animation: scan-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes scan-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(285%); }
+}
+
 /* === REPOS VIEW === */
 .repos-page {
   max-width: 1200px;

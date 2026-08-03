@@ -48,8 +48,37 @@ function AppShell({ user, onLogout, children }) {
   );
 }
 
+function AuthenticatingScreen({ error, onRetry }) {
+  return (
+    <div className="auth-loading">
+      <div className="reg-mark reg-mark--tl" aria-hidden="true" />
+      <div className="reg-mark reg-mark--tr" aria-hidden="true" />
+      <div className="reg-mark reg-mark--bl" aria-hidden="true" />
+      <div className="reg-mark reg-mark--br" aria-hidden="true" />
+      <div className="auth-loading-panel">
+        <span className="auth-loading-mark"><LineageMark size={32} /></span>
+        {error ? (
+          <>
+            <p className="auth-loading-title auth-loading-title--error">Authentication failed</p>
+            <p className="auth-loading-sub">{error}</p>
+            <button className="auth-retry-btn" onClick={onRetry}>Try again</button>
+          </>
+        ) : (
+          <>
+            <p className="auth-loading-title">Connecting to GitHub…</p>
+            <p className="auth-loading-sub">This can take a few seconds on a cold start.</p>
+            <div className="scanning-bar" aria-hidden="true"><span className="scanning-bar-fill" /></div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authenticating, setAuthenticating] = useState(false);
+  const [authError, setAuthError] = useState('');
   const [user, setUser] = useState(null);
   const [repos, setRepos] = useState([]);
   const [filteredRepos, setFilteredRepos] = useState([]);
@@ -111,11 +140,13 @@ export default function App() {
       setIsLoggedIn(true);
       fetchUser(token);
       fetchRepos(token);
+      return;
     }
 
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
-    if (code && !localStorage.getItem('github_token')) {
+    if (code) {
+      setAuthenticating(true);
       exchangeCodeForToken(code);
       window.history.replaceState({}, document.title, window.location.pathname);
     }
@@ -142,12 +173,17 @@ export default function App() {
         body: JSON.stringify({ code })
       });
       const data = await response.json();
+      if (!response.ok || !data.access_token) {
+        throw new Error(data.detail || 'GitHub login failed. Please try again.');
+      }
       localStorage.setItem('github_token', data.access_token);
       setIsLoggedIn(true);
+      setAuthenticating(false);
       fetchUser(data.access_token);
       fetchRepos(data.access_token);
     } catch (err) {
-      setError('Login failed');
+      setAuthError(err.message || 'Login failed. Please try again.');
+      setAuthenticating(false);
     }
   };
 
@@ -183,6 +219,9 @@ export default function App() {
   };
 
   const handleLogin = () => {
+    if (authenticating) return;
+    setAuthenticating(true);
+    setAuthError('');
     const scope = 'repo';
     const authUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${CALLBACK_URL}&scope=${scope}`;
     window.location.href = authUrl;
@@ -253,6 +292,9 @@ export default function App() {
   };
 
   if (!isLoggedIn) {
+    if (authenticating || authError) {
+      return <AuthenticatingScreen error={authError} onRetry={handleLogin} />;
+    }
     return <Landing onLogin={handleLogin} />;
   }
 
