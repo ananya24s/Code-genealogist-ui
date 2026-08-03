@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GitBranch, Clock, Zap, Eye, RefreshCw, Boxes, ChevronRight, Search, Copy, Check } from 'lucide-react';
-import logoHorizontal from './assets/logo-horizontal.jpeg';
+import { Star, Zap, ChevronRight, Search, Copy, Check } from 'lucide-react';
 import logoIcon from './assets/logo-icon.jpeg';
 import './App.css';
 import Landing from './Landing';
@@ -8,6 +7,46 @@ import RepoExplorer from './RepoExplorer';
 
 const GITHUB_CLIENT_ID = import.meta.env.VITE_GITHUB_CLIENT_ID;
 const CALLBACK_URL = import.meta.env.VITE_GITHUB_CALLBACK_URL;
+
+function LineageMark({ size = 24 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6" cy="18" r="2" />
+      <circle cx="18" cy="18" r="2" />
+      <circle cx="12" cy="6" r="2" />
+      <path d="M6 16v-2a2 2 0 0 1 2-2h2" />
+      <path d="M18 16v-2a2 2 0 0 0-2-2h-2" />
+      <path d="M12 8v2" />
+    </svg>
+  );
+}
+
+function AppShell({ user, onLogout, children }) {
+  return (
+    <div className="app-container">
+      <div className="reg-mark reg-mark--tl" aria-hidden="true" />
+      <div className="reg-mark reg-mark--tr" aria-hidden="true" />
+      <div className="reg-mark reg-mark--bl" aria-hidden="true" />
+      <div className="reg-mark reg-mark--br" aria-hidden="true" />
+
+      <header className="app-header">
+        <div className="header-brand">
+          <span className="header-brand-mark"><LineageMark /></span>
+          <span className="header-brand-text">Code<br />Genealogist</span>
+        </div>
+        <div className="header-right">
+          <div className="user-profile">
+            <img src={user?.avatar_url} alt={user?.login} className="avatar" />
+            <span className="username">{user?.login}</span>
+          </div>
+          <button className="logout-btn" onClick={onLogout}>Logout</button>
+        </div>
+      </header>
+
+      <main className="app-main">{children}</main>
+    </div>
+  );
+}
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -219,30 +258,26 @@ export default function App() {
 
   // REPOS VIEW
   if (step === 'repos') {
+    const languageCount = new Set(repos.map((r) => r.language).filter(Boolean)).size;
+
     return (
-      <div className="app-container">
-        <header className="app-header">
-          <div className="header-left">
-            <img src={logoHorizontal} alt="Code Genealogist" className="app-logo" />
+      <AppShell user={user} onLogout={handleLogout}>
+        <div className="repos-page">
+          <div className="page-label">
+            <span className="page-label-no">INDEX</span>
+            <span className="page-label-name">REPOSITORY REGISTRY</span>
+            <span className="page-label-count">{repos.length || '—'} FOUND</span>
+            <span className="page-label-rule" aria-hidden="true" />
           </div>
-          <div className="header-right">
-            <div className="user-profile">
-              <img src={user?.avatar_url} alt={user?.login} className="avatar" />
-              <span className="username">{user?.login}</span>
-            </div>
-            <button className="logout-btn" onClick={handleLogout}>Logout</button>
+
+          <div className="repos-intro">
+            <h1>Select a specimen to begin</h1>
+            <p>Choose a repository — we'll trace every function's history from there.</p>
           </div>
-        </header>
 
-        <main className="app-main">
-          <div className="repos-container">
-            <div className="repos-header">
-              <h1>Repositories</h1>
-              <p className="repos-subtitle">Select a repository to start analyzing functions</p>
-            </div>
-
+          <div className="repos-toolbar">
             <div className="search-box">
-              <Search size={18} />
+              <Search size={16} />
               <input
                 type="text"
                 placeholder="Search repositories..."
@@ -251,78 +286,69 @@ export default function App() {
                 className="search-input"
               />
             </div>
-
-            {filteredRepos.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon">📦</div>
-                <h3>No repositories found</h3>
-                <p>{searchQuery ? 'Try adjusting your search' : 'Loading repositories...'}</p>
-              </div>
-            ) : (
-              <div className="repos-grid">
-                {filteredRepos.map((repo) => (
-                  <button
-                    key={repo.id}
-                    className="repo-card"
-                    onClick={() => handleSelectRepo(repo)}
-                  >
-                    <div className="repo-card-header">
-                      <GitBranch size={18} className="repo-icon" />
-                      <h3>{repo.name}</h3>
-                    </div>
-                    <p className="repo-description">
-                      {repo.description || 'No description provided'}
-                    </p>
-                    <div className="repo-footer">
-                      <span className="repo-language">{repo.language || 'Unknown'}</span>
-                      <span className="repo-stars">⭐ {repo.stargazers_count}</span>
-                    </div>
-                  </button>
-                ))}
+            {repos.length > 0 && (
+              <div className="repos-meta">
+                <span>{repos.length} repositories</span>
+                <span className="meta-dot" aria-hidden="true" />
+                <span>{languageCount} languages</span>
               </div>
             )}
           </div>
-        </main>
-      </div>
+
+          {filteredRepos.length === 0 ? (
+            <div className="empty-state">
+              <h3>{searchQuery ? 'No matches' : 'Loading repositories…'}</h3>
+              <p>{searchQuery ? 'Try adjusting your search query.' : 'Fetching your GitHub repositories.'}</p>
+            </div>
+          ) : (
+            <div className="repos-grid">
+              {filteredRepos.map((repo, i) => (
+                <button
+                  key={repo.id}
+                  className="repo-card"
+                  onClick={() => handleSelectRepo(repo)}
+                >
+                  <span className="repo-card-index">{String(i + 1).padStart(2, '0')}</span>
+                  <span className="repo-card-bracket repo-card-bracket--tl" />
+                  <span className="repo-card-bracket repo-card-bracket--br" />
+                  <div className="repo-card-body">
+                    <h3>{repo.name}</h3>
+                    <p>{repo.description || 'No description provided'}</p>
+                  </div>
+                  <div className="repo-card-footer">
+                    <span className="repo-language">{repo.language || 'Unknown'}</span>
+                    <span className="repo-stars"><Star size={12} /> {repo.stargazers_count}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </AppShell>
     );
   }
 
   // EXPLORE VIEW
   if (step === 'explore') {
     return (
-      <div className="app-container">
-        <header className="app-header">
-          <div className="header-left">
-            <img src={logoHorizontal} alt="Code Genealogist" className="app-logo" />
+      <AppShell user={user} onLogout={handleLogout}>
+        <button className="back-link" onClick={() => setStep('repos')} style={{margin: '24px 0 0 40px'}}>
+          <ChevronRight size={18} style={{transform: 'rotate(180deg)'}} />
+          Back to Repositories
+        </button>
+
+        {error && (
+          <div className="error-message" style={{margin: '16px 40px 0 40px'}}>
+            <span>⚠️</span>
+            <span>{error}</span>
           </div>
-          <div className="header-right">
-            <div className="user-profile">
-              <img src={user?.avatar_url} alt={user?.login} className="avatar" />
-              <span className="username">{user?.login}</span>
-            </div>
-            <button className="logout-btn" onClick={handleLogout}>Logout</button>
-          </div>
-        </header>
+        )}
 
-        <main className="app-main">
-          <button className="back-link" onClick={() => setStep('repos')} style={{margin: '24px 0 0 40px'}}>
-            <ChevronRight size={18} style={{transform: 'rotate(180deg)'}} />
-            Back to Repositories
-          </button>
-
-          {error && (
-            <div className="error-message" style={{margin: '16px 40px 0 40px'}}>
-              <span>⚠️</span>
-              <span>{error}</span>
-            </div>
-          )}
-
-          <RepoExplorer
-            repo={selectedRepo}
-            token={localStorage.getItem('github_token')}
-            onFunctionSelected={handleFunctionSelected}
-          />
-        </main>
+        <RepoExplorer
+          repo={selectedRepo}
+          token={localStorage.getItem('github_token')}
+          onFunctionSelected={handleFunctionSelected}
+        />
 
         {loading && (
           <div className="loading-overlay">
@@ -335,7 +361,7 @@ export default function App() {
             </div>
           </div>
         )}
-      </div>
+      </AppShell>
     );
   }
 
@@ -345,21 +371,7 @@ export default function App() {
   const changeInfo = genealogy?.changes[activeVersion];
 
   return (
-    <div className="app-container">
-      <header className="app-header">
-        <div className="header-left">
-          <img src={logoHorizontal} alt="Code Genealogist" className="app-logo" />
-        </div>
-        <div className="header-right">
-          <div className="user-profile">
-            <img src={user?.avatar_url} alt={user?.login} className="avatar" />
-            <span className="username">{user?.login}</span>
-          </div>
-          <button className="logout-btn" onClick={handleLogout}>Logout</button>
-        </div>
-      </header>
-
-      <main className="app-main">
+    <AppShell user={user} onLogout={handleLogout}>
         <div className="results-container">
           <div className="results-header">
             <button className="back-link" onClick={() => setStep('repos')}>
@@ -609,7 +621,6 @@ export default function App() {
             </div>
           </div>
         </div>
-      </main>
 
       {loading && (
         <div className="loading-overlay">
@@ -622,6 +633,6 @@ export default function App() {
           </div>
         </div>
       )}
-    </div>
+    </AppShell>
   );
 }

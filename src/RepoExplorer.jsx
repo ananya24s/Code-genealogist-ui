@@ -1,12 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { Search, FileCode, ChevronRight, AlertCircle } from 'lucide-react';
+import { Search, ChevronRight, AlertCircle } from 'lucide-react';
 import './RepoExplorer.css';
 
 const SUPPORTED_EXTENSIONS = ['py', 'js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx'];
 
+const KIND_LABELS = {
+  'python-def': 'DEF',
+  'js-function': 'FN',
+  'js-arrow': 'ARROW',
+};
+
 function getExtension(path) {
   const parts = path.split('.');
   return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : '';
+}
+
+function fileName(path) {
+  return path.split('/').pop();
+}
+
+function ScanningLabel({ text }) {
+  return (
+    <div className="scanning-label">
+      <span>{text}</span>
+      <span className="scanning-bar" aria-hidden="true"><span className="scanning-bar-fill" /></span>
+    </div>
+  );
 }
 
 export default function RepoExplorer({ repo, token, onFunctionSelected }) {
@@ -15,6 +34,7 @@ export default function RepoExplorer({ repo, token, onFunctionSelected }) {
   const [filesLoading, setFilesLoading] = useState(true);
   const [filesError, setFilesError] = useState('');
 
+  const [view, setView] = useState('files');
   const [selectedFile, setSelectedFile] = useState(null);
   const [functions, setFunctions] = useState([]);
   const [functionsLoading, setFunctionsLoading] = useState(false);
@@ -61,6 +81,7 @@ export default function RepoExplorer({ repo, token, onFunctionSelected }) {
 
   const handleSelectFile = async (path) => {
     setSelectedFile(path);
+    setView('functions');
     setFunctions([]);
     setFunctionsError('');
     setFunctionsLoading(true);
@@ -100,15 +121,35 @@ export default function RepoExplorer({ repo, token, onFunctionSelected }) {
 
   return (
     <div className="explorer-container">
-      <div className="explorer-header">
-        <h1>Explore {repo?.name}</h1>
-        <p className="explorer-subtitle">Pick a file, then pick a function to analyze</p>
+      <div className="explorer-trail">
+        <span className="trail-segment trail-repo">
+          <span className="trail-label">REPO</span>
+          <span className="trail-value">{repo?.name}</span>
+        </span>
+        <ChevronRight size={13} className="trail-arrow" aria-hidden="true" />
+        <button
+          className={`trail-segment trail-clickable ${view === 'files' ? 'is-current' : ''}`}
+          onClick={() => setView('files')}
+        >
+          <span className="trail-label">FILE</span>
+          <span className="trail-value">{selectedFile ? fileName(selectedFile) : '—'}</span>
+        </button>
+        <ChevronRight size={13} className="trail-arrow" aria-hidden="true" />
+        <button
+          className={`trail-segment trail-clickable ${view === 'functions' ? 'is-current' : ''}`}
+          onClick={() => selectedFile && setView('functions')}
+          disabled={!selectedFile}
+        >
+          <span className="trail-label">FUNCTION</span>
+          <span className="trail-value">{functions.length ? `${functions.length} found` : '—'}</span>
+        </button>
+        <span className="trail-rule" aria-hidden="true" />
       </div>
 
-      <div className="explorer-grid">
-        <div className="explorer-panel">
+      {view === 'files' ? (
+        <div className="explorer-panel" key="files">
           <div className="search-box">
-            <Search size={18} />
+            <Search size={16} />
             <input
               type="text"
               placeholder="Search files..."
@@ -119,7 +160,7 @@ export default function RepoExplorer({ repo, token, onFunctionSelected }) {
           </div>
 
           <div className="explorer-list">
-            {filesLoading && <p className="explorer-hint">Loading files...</p>}
+            {filesLoading && <ScanningLabel text="Loading repository tree" />}
             {filesError && (
               <div className="explorer-error">
                 <AlertCircle size={16} />
@@ -131,29 +172,23 @@ export default function RepoExplorer({ repo, token, onFunctionSelected }) {
                 {fileSearch ? 'No files match your search.' : 'No supported files found in this repository.'}
               </p>
             )}
-            {!filesLoading && filteredFiles.map((file) => (
+            {!filesLoading && filteredFiles.map((file, i) => (
               <button
                 key={file.path}
-                className={`explorer-item ${selectedFile === file.path ? 'active' : ''}`}
+                className={`file-row ${selectedFile === file.path ? 'active' : ''}`}
                 onClick={() => handleSelectFile(file.path)}
               >
-                <FileCode size={16} className="explorer-item-icon" />
-                <span className="explorer-item-label">{file.path}</span>
+                <span className="file-row-index">{String(i + 1).padStart(3, '0')}</span>
+                <span className={`file-kind kind-${getExtension(file.path)}`}>{getExtension(file.path)}</span>
+                <span className="file-row-label">{file.path}</span>
+                <ChevronRight size={14} className="file-row-arrow" />
               </button>
             ))}
           </div>
         </div>
-
-        <div className="explorer-panel">
-          <h3 className="explorer-panel-title">Functions</h3>
-
-          {!selectedFile && (
-            <p className="explorer-hint">Select a file to see its functions.</p>
-          )}
-
-          {selectedFile && functionsLoading && (
-            <p className="explorer-hint">Scanning {selectedFile}...</p>
-          )}
+      ) : (
+        <div className="explorer-panel" key="functions">
+          {functionsLoading && <ScanningLabel text={`Scanning ${fileName(selectedFile)}`} />}
 
           {functionsError && (
             <div className="explorer-error">
@@ -162,58 +197,64 @@ export default function RepoExplorer({ repo, token, onFunctionSelected }) {
             </div>
           )}
 
-          {selectedFile && !functionsLoading && !functionsError && functions.length === 0 && (
+          {!functionsLoading && !functionsError && functions.length === 0 && (
             <p className="explorer-hint">
               No functions detected in this file. Try entering the details manually below.
             </p>
           )}
 
-          <div className="explorer-list">
-            {!functionsLoading && functions.map((fn) => (
-              <button
-                key={fn.name}
-                className="explorer-item"
-                onClick={() => onFunctionSelected({ filePath: selectedFile, functionName: fn.name })}
-              >
-                <span className="explorer-item-label">{fn.name}</span>
-                <span className="explorer-item-meta">line {fn.line}</span>
-              </button>
-            ))}
-          </div>
-
-          <button className="manual-toggle" onClick={() => setManualMode(!manualMode)}>
-            {manualMode ? 'Hide manual entry' : "Can't find your function? Enter manually"}
-            <ChevronRight size={14} style={{ transform: manualMode ? 'rotate(90deg)' : 'rotate(0deg)' }} />
-          </button>
-
-          {manualMode && (
-            <div className="manual-form">
-              <input
-                type="text"
-                placeholder="File path, e.g. src/utils/helpers.ts"
-                value={manualFilePath}
-                onChange={(e) => setManualFilePath(e.target.value)}
-                className="form-input"
-              />
-              <input
-                type="text"
-                placeholder="Function name, e.g. calculateTotal"
-                value={manualFunctionName}
-                onChange={(e) => setManualFunctionName(e.target.value)}
-                className="form-input"
-              />
-              <button
-                className="analyze-btn"
-                onClick={handleManualSubmit}
-                disabled={!manualFilePath || !manualFunctionName}
-              >
-                Analyze Function
-                <ChevronRight size={18} />
-              </button>
+          {!functionsLoading && functions.length > 0 && (
+            <div className="specimen-grid">
+              {functions.map((fn, i) => (
+                <button
+                  key={fn.name}
+                  className="specimen-card"
+                  onClick={() => onFunctionSelected({ filePath: selectedFile, functionName: fn.name })}
+                >
+                  <span className="specimen-card-bracket specimen-card-bracket--tl" />
+                  <span className="specimen-card-bracket specimen-card-bracket--br" />
+                  <span className="specimen-index">{String(i + 1).padStart(2, '0')}</span>
+                  <span className={`specimen-kind kind-${fn.kind}`}>{KIND_LABELS[fn.kind] || fn.kind}</span>
+                  <span className="specimen-name">{fn.name}</span>
+                  <span className="specimen-line">LINE {fn.line}</span>
+                </button>
+              ))}
             </div>
           )}
         </div>
-      </div>
+      )}
+
+      <button className="manual-toggle" onClick={() => setManualMode(!manualMode)}>
+        {manualMode ? 'Hide manual entry' : "Can't find your function? Enter manually"}
+        <ChevronRight size={14} style={{ transform: manualMode ? 'rotate(90deg)' : 'rotate(0deg)' }} />
+      </button>
+
+      {manualMode && (
+        <div className="manual-form">
+          <input
+            type="text"
+            placeholder="File path, e.g. src/utils/helpers.ts"
+            value={manualFilePath}
+            onChange={(e) => setManualFilePath(e.target.value)}
+            className="form-input"
+          />
+          <input
+            type="text"
+            placeholder="Function name, e.g. calculateTotal"
+            value={manualFunctionName}
+            onChange={(e) => setManualFunctionName(e.target.value)}
+            className="form-input"
+          />
+          <button
+            className="analyze-btn"
+            onClick={handleManualSubmit}
+            disabled={!manualFilePath || !manualFunctionName}
+          >
+            Analyze Function
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
