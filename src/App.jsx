@@ -1,12 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Star, Zap, ChevronRight, Search, Copy, Check } from 'lucide-react';
-import logoIcon from './assets/logo-icon.jpeg';
 import './App.css';
 import Landing from './Landing';
 import RepoExplorer from './RepoExplorer';
 
 const GITHUB_CLIENT_ID = import.meta.env.VITE_GITHUB_CLIENT_ID;
 const CALLBACK_URL = import.meta.env.VITE_GITHUB_CALLBACK_URL;
+
+const ANALYSIS_STAGES = [
+  { label: 'Repository Cloning', detail: 'Fetching the repository and commit history from GitHub' },
+  { label: 'Commit History Extraction', detail: 'Walking every commit that touched this file' },
+  { label: 'Function Reconstruction', detail: 'Extracting this function from each historical version' },
+  { label: 'AI Change Classification', detail: 'Classifying what changed between versions, and why' },
+  { label: 'Timeline Generation', detail: 'Building the evolution summary and analytics' },
+  { label: 'Finalizing Results', detail: 'Assembling the results view' },
+];
+// Cumulative ms at which each stage becomes active — a believable estimate, not a
+// real progress feed (the backend returns one response at the end, no streaming).
+const STAGE_SCHEDULE_MS = [0, 1300, 2800, 4600, 7000, 8800];
+const COLD_START_HINT_MS = 15000;
 
 function LineageMark({ size = 24 }) {
   return (
@@ -75,6 +87,109 @@ function AuthenticatingScreen({ error, onRetry }) {
   );
 }
 
+function AnalysisLoadingScreen({ stage, elapsedMs, repoName, functionName }) {
+  const showColdStartHint = elapsedMs > COLD_START_HINT_MS && stage === ANALYSIS_STAGES.length - 1;
+
+  return (
+    <div className="loading-overlay">
+      <div className="analysis-panel">
+        <div className="analysis-panel-head">
+          <span className="analysis-panel-label">ANALYSIS PIPELINE</span>
+          <span className="analysis-panel-target">
+            {repoName ? `${repoName} · ${functionName}` : functionName}
+          </span>
+        </div>
+
+        <ul className="analysis-stage-list">
+          {ANALYSIS_STAGES.map((s, i) => {
+            const status = i < stage ? 'done' : i === stage ? 'active' : 'pending';
+            return (
+              <li key={s.label} className={`analysis-stage analysis-stage--${status}`}>
+                <span className="analysis-stage-marker" aria-hidden="true">
+                  {status === 'done' ? '✓' : status === 'active' ? '' : ''}
+                </span>
+                <span className="analysis-stage-body">
+                  <span className="analysis-stage-label">{s.label}</span>
+                  {status === 'active' && <span className="analysis-stage-detail">{s.detail}</span>}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+
+        {showColdStartHint && (
+          <p className="analysis-cold-hint">
+            Taking longer than usual — the analysis engine may be waking up from idle.
+            This can take up to a minute on the first request.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Standard LCS-based unified line diff — real diff, not a set-difference approximation.
+function computeLineDiff(oldCode = '', newCode = '') {
+  const a = oldCode.split('\n');
+  const b = newCode.split('\n');
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const result = [];
+  let i = 0, j = 0;
+  while (i < m && j < n) {
+    if (a[i] === b[j]) {
+      result.push({ type: 'same', text: a[i] });
+      i++; j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      result.push({ type: 'remove', text: a[i] });
+      i++;
+    } else {
+      result.push({ type: 'add', text: b[j] });
+      j++;
+    }
+  }
+  while (i < m) { result.push({ type: 'remove', text: a[i] }); i++; }
+  while (j < n) { result.push({ type: 'add', text: b[j] }); j++; }
+  return result;
+}
+
+function DiffView({ oldCode, oldLabel, newCode, newLabel }) {
+  const diff = useMemo(() => computeLineDiff(oldCode, newCode), [oldCode, newCode]);
+  const added = diff.filter((l) => l.type === 'add').length;
+  const removed = diff.filter((l) => l.type === 'remove').length;
+
+  return (
+    <div className="diff-view">
+      <div className="diff-view-head">
+        <span className="diff-view-versions">
+          <span className="diff-tag diff-tag--old">{oldLabel}</span>
+          <ChevronRight size={13} />
+          <span className="diff-tag diff-tag--new">{newLabel}</span>
+        </span>
+        <span className="diff-view-stats">
+          {added > 0 && <span className="diff-stat diff-stat--add">+{added}</span>}
+          {removed > 0 && <span className="diff-stat diff-stat--remove">-{removed}</span>}
+          {added === 0 && removed === 0 && <span className="diff-stat">No line changes</span>}
+        </span>
+      </div>
+      <pre className="diff-code">
+        {diff.map((line, idx) => (
+          <div key={idx} className={`diff-line diff-line--${line.type}`}>
+            <span className="diff-marker">{line.type === 'add' ? '+' : line.type === 'remove' ? '−' : ''}</span>
+            <span className="diff-text">{line.text || ' '}</span>
+          </div>
+        ))}
+      </pre>
+    </div>
+  );
+}
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authenticating, setAuthenticating] = useState(false);
@@ -89,6 +204,10 @@ export default function App() {
   const [functionName, setFunctionName] = useState('');
   const [genealogy, setGenealogy] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [overlayVisible, setOverlayVisible] = useState(false);
+  const [analysisStage, setAnalysisStage] = useState(0);
+  const [analysisElapsed, setAnalysisElapsed] = useState(0);
+  const currentStageRef = useRef(0);
   const [error, setError] = useState('');
   const [activeVersion, setActiveVersion] = useState(0);
   const [showComparison, setShowComparison] = useState(false);
@@ -111,9 +230,9 @@ export default function App() {
   };
 
   const getSimilarityColor = (similarity) => {
-    if (similarity >= 90) return '#10b981';
-    if (similarity >= 70) return '#f59e0b';
-    return '#ef4444';
+    if (similarity >= 90) return '#5eead4';
+    if (similarity >= 70) return '#e8a33d';
+    return '#e2584f';
   };
 
   const getSimilarityLabel = (similarity) => {
@@ -124,12 +243,12 @@ export default function App() {
 
   const getChangeTypeColor = (type) => {
     switch(type) {
-      case 'Feature Addition': return '#10b981';
-      case 'Bug Fix': return '#ef4444';
-      case 'Refactor': return '#f59e0b';
-      case 'Performance Optimization': return '#6366f1';
-      case 'Security Improvement': return '#ec4899';
-      default: return '#80858b';
+      case 'Feature Addition': return '#99f6e4';
+      case 'Bug Fix': return '#e2584f';
+      case 'Refactor': return '#e8a33d';
+      case 'Performance Optimization': return '#5eead4';
+      case 'Security Improvement': return '#d97757';
+      default: return '#85a0a8';
     }
   };
 
@@ -259,6 +378,23 @@ export default function App() {
 
     setLoading(true);
     setError('');
+    setOverlayVisible(true);
+    setAnalysisStage(0);
+    setAnalysisElapsed(0);
+    currentStageRef.current = 0;
+    const startedAt = Date.now();
+
+    const stageTimer = setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      setAnalysisElapsed(elapsed);
+      let idx = 0;
+      for (let i = STAGE_SCHEDULE_MS.length - 1; i >= 0; i--) {
+        if (elapsed >= STAGE_SCHEDULE_MS[i]) { idx = i; break; }
+      }
+      currentStageRef.current = idx;
+      setAnalysisStage(idx);
+    }, 250);
+
     try {
       const response = await fetch('https://codegenealogist.onrender.com/analyze', {
         method: 'POST',
@@ -269,7 +405,7 @@ export default function App() {
           function_name: targetFunctionName
         })
       });
-      
+
       if (!response.ok) {
         const errData = await response.json();
         throw new Error(errData.detail || 'Analysis failed');
@@ -277,11 +413,25 @@ export default function App() {
       const data = await response.json();
       setGenealogy(data);
       setActiveVersion(0);
+      setShowComparison(false);
       setStep('results');
     } catch (err) {
       setError(err.message);
     } finally {
+      clearInterval(stageTimer);
       setLoading(false);
+
+      // Real work just finished — cascade any un-shown stages to completion quickly
+      // rather than either jump-cutting mid-stage or faking a slower finish.
+      let idx = currentStageRef.current;
+      const cascade = setInterval(() => {
+        idx += 1;
+        setAnalysisStage(Math.min(idx, ANALYSIS_STAGES.length));
+        if (idx >= ANALYSIS_STAGES.length) {
+          clearInterval(cascade);
+          setTimeout(() => setOverlayVisible(false), 450);
+        }
+      }, 140);
     }
   };
 
@@ -392,16 +542,13 @@ export default function App() {
           onFunctionSelected={handleFunctionSelected}
         />
 
-        {loading && (
-          <div className="loading-overlay">
-            <div className="loading-content">
-              <img src={logoIcon} alt="Loading" className="loading-icon" />
-              <div className="loading-text">
-                <p>Analyzing repository...</p>
-                <p className="loading-subtext">Classifying changes & generating insights...</p>
-              </div>
-            </div>
-          </div>
+        {overlayVisible && (
+          <AnalysisLoadingScreen
+            stage={analysisStage}
+            elapsedMs={analysisElapsed}
+            repoName={selectedRepo?.name}
+            functionName={functionName}
+          />
         )}
       </AppShell>
     );
@@ -414,235 +561,138 @@ export default function App() {
 
   return (
     <AppShell user={user} onLogout={handleLogout}>
-        <div className="results-container">
-          <div className="results-header">
-            <button className="back-link" onClick={() => setStep('repos')}>
-              <ChevronRight size={18} style={{transform: 'rotate(180deg)'}} />
-              Back to Repositories
+        <div className="results-page">
+          <div className="results-trail">
+            <button className="back-link results-back" onClick={() => setStep('repos')}>
+              <ChevronRight size={16} style={{transform: 'rotate(180deg)'}} />
+              Repositories
             </button>
-            <div>
-              <h1>{currentVersion?.name || functionName}</h1>
-              <p className="results-subtitle">{selectedRepo?.name}</p>
-            </div>
+            <span className="trail-arrow" aria-hidden="true">/</span>
+            <span className="trail-segment">
+              <span className="trail-label">REPO</span>
+              <span className="trail-value">{selectedRepo?.name}</span>
+            </span>
+            <ChevronRight size={13} className="trail-arrow" aria-hidden="true" />
+            <span className="trail-segment">
+              <span className="trail-label">FUNCTION</span>
+              <span className="trail-value">{genealogy?.function || functionName}</span>
+            </span>
+            <span className="trail-rule" aria-hidden="true" />
           </div>
 
-          {genealogy?.evolution_summary && (
-            <div className="evolution-card">
-              <h3>Evolution Summary</h3>
-              <p>{genealogy.evolution_summary}</p>
-            </div>
-          )}
-
-          {genealogy?.analytics && (
-            <div className="analytics-card">
-              <h3>Repository Analytics</h3>
-              <div className="analytics-grid">
-                <div className="stat">
-                  <span className="stat-value">{genealogy.analytics.total_versions}</span>
-                  <span className="stat-label">Total Versions</span>
-                </div>
-                <div className="stat">
-                  <span className="stat-value">{genealogy.analytics.type_breakdown['Feature Addition'] || 0}</span>
-                  <span className="stat-label">Features</span>
-                </div>
-                <div className="stat">
-                  <span className="stat-value">{genealogy.analytics.type_breakdown['Bug Fix'] || 0}</span>
-                  <span className="stat-label">Bug Fixes</span>
-                </div>
-                <div className="stat">
-                  <span className="stat-value">{genealogy.analytics.type_breakdown['Refactor'] || 0}</span>
-                  <span className="stat-label">Refactors</span>
-                </div>
-                <div className="stat">
-                  <span className="stat-value">{genealogy.analytics.type_breakdown['Performance Optimization'] || 0}</span>
-                  <span className="stat-label">Optimizations</span>
-                </div>
-                <div className="stat">
-                  <span className="stat-value">{(genealogy.analytics.avg_confidence * 100).toFixed(0)}%</span>
-                  <span className="stat-label">Avg Confidence</span>
-                </div>
+          <div className="results-hero">
+            <h1>{genealogy?.function || functionName}<span className="results-hero-paren">()</span></h1>
+            {genealogy?.evolution_summary && (
+              <p className="results-summary">{genealogy.evolution_summary}</p>
+            )}
+            {genealogy?.analytics && (
+              <div className="results-stat-strip">
+                <span><strong>{genealogy.analytics.total_versions}</strong> versions</span>
+                <span className="meta-dot" aria-hidden="true" />
+                <span><strong>{genealogy.analytics.total_changes}</strong> changes</span>
+                <span className="meta-dot" aria-hidden="true" />
+                <span><strong>{(genealogy.analytics.avg_confidence * 100).toFixed(0)}%</strong> avg confidence</span>
+                {genealogy.analytics.milestones?.length > 0 && (
+                  <>
+                    <span className="meta-dot" aria-hidden="true" />
+                    <span><strong>{genealogy.analytics.milestones.length}</strong> milestones</span>
+                  </>
+                )}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
-          <div className="results-grid">
-            {/* TIMELINE SIDEBAR WITH MILESTONES */}
-            <aside className="timeline-sidebar">
-              <h3>Function History</h3>
-              <div className="versions-list">
+          <div className="results-body">
+            {/* CORE SAMPLE TIMELINE */}
+            <aside className="core-timeline">
+              <div className="core-timeline-head">
+                <span>CORE SAMPLE</span>
+                <span className="core-timeline-count">{genealogy?.versions.length} LAYERS</span>
+              </div>
+              <div className="core-timeline-list">
                 {genealogy?.versions.map((v, i) => {
                   const milestone = getMilestoneForVersion(i);
-                  const isMilestone = !!milestone;
-                  
+                  const incomingChange = i > 0 ? genealogy.changes[i - 1] : null;
+                  const isActive = activeVersion === i;
+                  const dotColor = incomingChange ? getChangeTypeColor(incomingChange.type) : 'var(--bp-cyan)';
+
                   return (
-                    <div 
-                      key={i} 
-                      className={`version-group ${isMilestone ? 'is-milestone' : ''}`}
+                    <button
+                      key={i}
+                      className={`core-stratum ${isActive ? 'is-active' : ''}`}
+                      onClick={() => { setActiveVersion(i); setShowComparison(false); }}
                     >
-                      <button
-                        className={`version-btn ${activeVersion === i ? 'active' : ''} ${isMilestone ? 'milestone-btn' : ''}`}
-                        onClick={() => setActiveVersion(i)}
-                        title={isMilestone ? `${milestone.type} (${(milestone.confidence * 100).toFixed(0)}% confident)` : ''}
-                      >
-                        <span className="version-label">v{i}</span>
-                        
-                        {isMilestone && (
-                          <span className="milestone-icon" title={milestone.type}>
-                            {getMilestoneIcon(milestone.type)}
-                          </span>
-                        )}
-                        
-                        {i < genealogy.changes.length && genealogy.changes[i]?.type && (
-                          <span 
-                            className="type-badge"
-                            style={{backgroundColor: getChangeTypeColor(genealogy.changes[i].type)}}
-                            title={genealogy.changes[i].type}
-                          >
-                            {genealogy.changes[i].type.substring(0, 3)}
-                          </span>
-                        )}
-                      </button>
-                      
-                      {i < genealogy.changes.length && (
-                        <div
-                          className="change-badge"
-                          style={{backgroundColor: getSimilarityColor(genealogy.changes[i].similarity)}}
-                          title={getSimilarityLabel(genealogy.changes[i].similarity)}
-                        >
-                          {genealogy.changes[i].similarity.toFixed(0)}%
-                        </div>
-                      )}
-                      
-                      {isMilestone && (
-                        <div className="milestone-badge" title={milestone.message}>
-                          <span className="milestone-type">{milestone.type}</span>
-                          <span className="milestone-confidence">{(milestone.confidence * 100).toFixed(0)}%</span>
-                        </div>
-                      )}
-                    </div>
+                      <span className="core-stratum-rail">
+                        <span className="core-stratum-dot" style={{ background: dotColor }} />
+                        {i < genealogy.versions.length - 1 && <span className="core-stratum-line" />}
+                      </span>
+                      <span className="core-stratum-content">
+                        <span className="core-stratum-top">
+                          <span className="core-stratum-version">v{i}</span>
+                          {milestone && (
+                            <span className="core-stratum-flag" title={`${milestone.type} — ${(milestone.confidence * 100).toFixed(0)}% confident`}>
+                              {getMilestoneIcon(milestone.type)}
+                            </span>
+                          )}
+                          {incomingChange && (
+                            <span className="core-stratum-type" style={{ color: dotColor }}>
+                              {incomingChange.type}
+                            </span>
+                          )}
+                        </span>
+                        <span className="core-stratum-message">{v.message}</span>
+                      </span>
+                    </button>
                   );
                 })}
               </div>
             </aside>
 
-            {/* MAIN RESULTS CONTENT */}
+            {/* MAIN CONTENT */}
             <div className="results-main">
-              <div className="version-card">
-                <div className="version-card-header">
-                  <div>
-                    <h2>Version {activeVersion}</h2>
-                    <div className="version-meta">
-                      <span className="meta-item">
-                        <strong>Author:</strong> {currentVersion?.author}
-                      </span>
-                      <span className="meta-item">
-                        <strong>Date:</strong> {new Date(currentVersion?.date).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="commit-message">
-                  {currentVersion?.message}
-                </div>
-              </div>
-
-              <div className="code-card">
-                <div className="code-header">
-                  <h3>Code</h3>
+              <div className="version-strip">
+                <div className="version-strip-main">
+                  <span className="version-strip-tag">v{activeVersion}</span>
+                  <span className="version-strip-message">{currentVersion?.message}</span>
                   <button
-                    className="copy-btn"
+                    className="version-strip-copy"
                     onClick={() => copyToClipboard(currentVersion?.code, 'current')}
+                    title="Copy code"
                   >
-                    {copiedCode === 'current' ? (
-                      <>
-                        <Check size={16} />
-                        Copied
-                      </>
-                    ) : (
-                      <>
-                        <Copy size={16} />
-                        Copy
-                      </>
-                    )}
+                    {copiedCode === 'current' ? <Check size={14} /> : <Copy size={14} />}
                   </button>
                 </div>
-                <div className="code-viewer">
-                  <pre><code>{currentVersion?.code}</code></pre>
+                <div className="version-strip-meta">
+                  <span>{currentVersion?.author}</span>
+                  <span className="meta-dot" aria-hidden="true" />
+                  <span>{new Date(currentVersion?.date).toLocaleDateString()}</span>
+                  <span className="meta-dot" aria-hidden="true" />
+                  <span className="version-strip-hash">{currentVersion?.hash}</span>
                 </div>
               </div>
 
-              {changeInfo && (
-                <div className="change-card">
-                  <div className="change-header">
-                    <div>
-                      <h3>Evolution to Next Version</h3>
+              {changeInfo ? (
+                <>
+                  <div className="diff-toolbar">
+                    <div className="diff-toolbar-info">
                       {changeInfo.type && (
-                        <span className="change-type" style={{color: getChangeTypeColor(changeInfo.type)}}>
+                        <span
+                          className="diff-type-badge"
+                          style={{ color: getChangeTypeColor(changeInfo.type), borderColor: getChangeTypeColor(changeInfo.type) }}
+                        >
                           {changeInfo.type}
                         </span>
                       )}
+                      <span className="diff-similarity" style={{ color: getSimilarityColor(changeInfo.similarity) }}>
+                        {changeInfo.similarity.toFixed(0)}% similar · {getSimilarityLabel(changeInfo.similarity)}
+                      </span>
                     </div>
-                    <div
-                      className="change-indicator"
-                      style={{backgroundColor: getSimilarityColor(changeInfo.similarity)}}
-                    >
-                      <span className="change-percent">{changeInfo.similarity.toFixed(0)}%</span>
-                      <span className="change-label">{getSimilarityLabel(changeInfo.similarity)}</span>
-                    </div>
+                    <button className="view-toggle" onClick={() => setShowComparison(!showComparison)}>
+                      {showComparison ? 'Unified diff' : 'Side-by-side'}
+                    </button>
                   </div>
 
-                  {changeInfo?.explanation && (
-                    <div className="ai-card">
-                      <div className="ai-header">
-                        <Zap size={18} />
-                        <span>AI Analysis</span>
-                        {changeInfo.explanation.confidence && (
-                          <span className="confidence-indicator">
-                            {(changeInfo.explanation.confidence * 100).toFixed(0)}%
-                          </span>
-                        )}
-                      </div>
-                      
-                      {changeInfo.explanation.what_changed && (
-                        <div className="ai-section">
-                          <h4>What Changed</h4>
-                          <p>{changeInfo.explanation.what_changed}</p>
-                        </div>
-                      )}
-                      
-                      {changeInfo.explanation.why_changed && (
-                        <div className="ai-section">
-                          <h4>Why It Changed</h4>
-                          <p>{changeInfo.explanation.why_changed}</p>
-                        </div>
-                      )}
-                      
-                      {changeInfo.explanation.impact && (
-                        <div className="ai-section">
-                          <h4>Impact</h4>
-                          <p>{changeInfo.explanation.impact}</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {nextVersion && (
-                    <div className="next-version-card">
-                      <h4>Next Version Preview</h4>
-                      <p className="next-message">{nextVersion.message}</p>
-                      <p className="next-author">by {nextVersion.author}</p>
-                    </div>
-                  )}
-
-                  <button
-                    className="comparison-toggle"
-                    onClick={() => setShowComparison(!showComparison)}
-                  >
-                    {showComparison ? 'Hide Comparison' : 'View Side-by-Side Comparison'}
-                    <ChevronRight size={16} style={{transform: showComparison ? 'rotate(90deg)' : 'rotate(0deg)'}} />
-                  </button>
-
-                  {showComparison && nextVersion && (
+                  {showComparison ? (
                     <div className="comparison-grid">
                       <div className="comparison-col">
                         <h4>v{activeVersion}</h4>
@@ -657,23 +707,69 @@ export default function App() {
                         </div>
                       </div>
                     </div>
+                  ) : (
+                    <DiffView
+                      oldCode={currentVersion?.code || ''}
+                      oldLabel={`v${activeVersion}`}
+                      newCode={nextVersion?.code || ''}
+                      newLabel={`v${activeVersion + 1}`}
+                    />
                   )}
-                </div>
+
+                  {changeInfo.explanation && (
+                    <div className="insight-panel">
+                      <div className="insight-head">
+                        <Zap size={15} />
+                        <span>AI ANALYSIS</span>
+                        {changeInfo.explanation.confidence && (
+                          <span className="insight-confidence">
+                            {(changeInfo.explanation.confidence * 100).toFixed(0)}% confidence
+                          </span>
+                        )}
+                      </div>
+
+                      {changeInfo.explanation.what_changed && (
+                        <div className="insight-row">
+                          <span className="insight-label">WHAT</span>
+                          <p>{changeInfo.explanation.what_changed}</p>
+                        </div>
+                      )}
+
+                      {changeInfo.explanation.why_changed && (
+                        <div className="insight-row">
+                          <span className="insight-label">WHY</span>
+                          <p>{changeInfo.explanation.why_changed}</p>
+                        </div>
+                      )}
+
+                      {changeInfo.explanation.impact && (
+                        <div className="insight-row">
+                          <span className="insight-label">IMPACT</span>
+                          <p>{changeInfo.explanation.impact}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="code-viewer code-viewer--standalone">
+                    <pre><code>{currentVersion?.code}</code></pre>
+                  </div>
+                  <p className="results-current-note">This is the current version — no further changes recorded.</p>
+                </>
               )}
             </div>
           </div>
         </div>
 
-      {loading && (
-        <div className="loading-overlay">
-          <div className="loading-content">
-            <img src={logoIcon} alt="Loading" className="loading-icon" />
-            <div className="loading-text">
-              <p>Analyzing repository...</p>
-              <p className="loading-subtext">Classifying changes & generating insights...</p>
-            </div>
-          </div>
-        </div>
+      {overlayVisible && (
+        <AnalysisLoadingScreen
+          stage={analysisStage}
+          elapsedMs={analysisElapsed}
+          repoName={selectedRepo?.name}
+          functionName={functionName}
+        />
       )}
     </AppShell>
   );
