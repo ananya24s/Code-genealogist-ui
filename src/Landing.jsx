@@ -39,6 +39,50 @@ const DEMO_VERSIONS = [
   { tag: 'v2', lines: [[' ', 'function score(user) {'], [' ', '  return user.points * user.mult'], ['+', '  // memoized — see cache.js'], [' ', '}']] },
 ];
 
+// Real commit history for extract_function() in this project's own backend
+// (CodeGenealogist/genealogy.py) — pulled from `git log`, not fabricated.
+const LIVE_DEMO = {
+  file: 'genealogy.py',
+  fn: 'extract_function()',
+  commits: [
+    { hash: 'f1faafc', date: '2026-06-03', message: 'Add backend files for deployment' },
+    { hash: '672ccda', date: '2026-06-04', message: 'Simplify function extraction regex' },
+    { hash: '0eb6537', date: '2026-08-02', message: 'Unify extraction with function picker' },
+  ],
+  base: [
+    'def extract_function(self, code, func_name):',
+    '    patterns = [',
+    '        rf"def\\s+{func_name}\\s*\\(..."',
+    '    ]',
+  ],
+  diffs: [
+    [
+      [' ', 'def extract_function(self, code, func_name):'],
+      [' ', '    patterns = ['],
+      ['-', '        rf"const\\s+{func_name}..."'],
+      ['+', '        # Python: def function_name'],
+      ['+', '        rf"def\\s+{func_name}\\s*\\(..."'],
+      ['+', '        # JavaScript: function declaration'],
+      ['+', '        rf"(?:export\\s+)?function..."'],
+      [' ', '    ]'],
+    ],
+    [
+      ['-', 'def extract_function(self, code, func_name):'],
+      ['+', "def extract_function(self, code, func_name, file_path=''):"],
+      ['-', '    patterns = [...]'],
+      ['+', '    language = self._language_for(file_path)'],
+      ['+', '    for pattern, _kind in self.PATTERNS[lang]:'],
+      ['+', '        for match in re.finditer(pattern, code):'],
+    ],
+  ],
+  insights: [
+    'Consolidated regex patterns — clearer JS/Python matching',
+    'Unified with list_functions() — one shared pattern source',
+  ],
+};
+
+const LIVE_DEMO_PHASE_MS = [900, 1300, 1900, 1300, 1900, 2700];
+
 function usePrefersReducedMotion() {
   const [reduced, setReduced] = useState(false);
   useEffect(() => {
@@ -102,6 +146,68 @@ function FunctionEvolutionDemo({ isActive, reducedMotion }) {
           </div>
         ))}
       </pre>
+    </div>
+  );
+}
+
+function LiveAnalysisDemo({ reducedMotion }) {
+  const [phase, setPhase] = useState(0);
+
+  useEffect(() => {
+    if (reducedMotion) return undefined;
+    const timer = setTimeout(() => {
+      setPhase((p) => (p + 1) % LIVE_DEMO_PHASE_MS.length);
+    }, LIVE_DEMO_PHASE_MS[phase]);
+    return () => clearTimeout(timer);
+  }, [phase, reducedMotion]);
+
+  const activePhase = reducedMotion ? 5 : phase;
+  const visibleCommits = activePhase === 0 ? 1 : activePhase < 3 ? 2 : 3;
+  const codeLines = activePhase === 0
+    ? LIVE_DEMO.base.map((line) => [' ', line])
+    : activePhase < 3 ? LIVE_DEMO.diffs[0] : LIVE_DEMO.diffs[1];
+  const codeKey = activePhase === 0 ? 'base' : activePhase < 3 ? 'diff0' : 'diff1';
+  const activeInsight = activePhase === 2 ? LIVE_DEMO.insights[0] : activePhase >= 4 ? LIVE_DEMO.insights[1] : null;
+
+  return (
+    <div className="live-demo" aria-hidden="true">
+      <div className="live-demo-head">
+        <span className="live-demo-label">FIG. 01 — LIVE ANALYSIS</span>
+        <span className="live-demo-target">{LIVE_DEMO.fn} <span className="live-demo-file">· {LIVE_DEMO.file}</span></span>
+      </div>
+
+      <div className="live-demo-timeline">
+        {LIVE_DEMO.commits.map((c, i) => (
+          <React.Fragment key={c.hash}>
+            <div className={`live-demo-node ${i < visibleCommits ? 'is-visible' : ''}`}>
+              <span className="live-demo-dot" />
+              <span className="live-demo-hash">{c.hash}</span>
+            </div>
+            {i < LIVE_DEMO.commits.length - 1 && (
+              <span className={`live-demo-connector ${i < visibleCommits - 1 ? 'is-drawn' : ''}`} />
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+
+      <div className="live-demo-code">
+        <pre key={codeKey}>
+          {codeLines.map(([marker, text], i) => (
+            <div key={i} className={`live-demo-line live-demo-line--${marker === '+' ? 'add' : marker === '-' ? 'remove' : 'same'}`}>
+              <span className="live-demo-marker">{marker === '+' ? '+' : marker === '-' ? '−' : ''}</span>
+              <span>{text}</span>
+            </div>
+          ))}
+        </pre>
+      </div>
+
+      <div className={`live-demo-insight ${activeInsight ? 'is-visible' : ''}`}>
+        <span className="live-demo-insight-leader" aria-hidden="true" />
+        <span className="live-demo-insight-body">
+          <span className="live-demo-insight-tag">AI INSIGHT</span>
+          <span className="live-demo-insight-text">{activeInsight}</span>
+        </span>
+      </div>
     </div>
   );
 }
@@ -218,13 +324,8 @@ export default function Landing({ onLogin }) {
                 <FunctionEvolutionDemo isActive={active === 'title'} reducedMotion={reducedMotion} />
               </div>
 
-              <div className="title-diagram" aria-hidden="true">
-                <div className="mark-detail">
-                  <LineageMark size={130} />
-                  <div className="mark-callout mark-callout--a"><span />NODE</div>
-                  <div className="mark-callout mark-callout--b"><span />BRANCH</div>
-                  <div className="mark-callout mark-callout--c"><span />ROOT COMMIT</div>
-                </div>
+              <div className="title-diagram">
+                <LiveAnalysisDemo reducedMotion={reducedMotion} />
               </div>
             </div>
           </div>
