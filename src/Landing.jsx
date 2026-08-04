@@ -267,6 +267,22 @@ export default function Landing({ onLogin }) {
     if (next) goTo(next.id);
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        goRelative(1);
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goRelative(-1);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeIndex]);
+
   const setSheetRef = (id) => (el) => {
     sheetRefs.current[id] = el;
   };
@@ -282,10 +298,10 @@ export default function Landing({ onLogin }) {
 
       <header className="landing-header">
         <div className="header-content">
-          <div className="brand">
+          <button className="brand" onClick={() => goTo('title')} aria-label="Back to top">
             <span className="brand-mark"><LineageMark /></span>
             <span className="brand-text">Code<br />Genealogist</span>
-          </div>
+          </button>
 
           <nav className="sheet-index">
             {SHEETS.map((s) => (

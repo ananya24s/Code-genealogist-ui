@@ -33,7 +33,7 @@ function LineageMark({ size = 24 }) {
   );
 }
 
-function AppShell({ user, onLogout, children }) {
+function AppShell({ user, onLogout, onHome, children }) {
   return (
     <div className="app-container">
       <div className="reg-mark reg-mark--tl" aria-hidden="true" />
@@ -42,10 +42,10 @@ function AppShell({ user, onLogout, children }) {
       <div className="reg-mark reg-mark--br" aria-hidden="true" />
 
       <header className="app-header">
-        <div className="header-brand">
+        <button className="header-brand" onClick={onHome} aria-label="Back to repositories">
           <span className="header-brand-mark"><LineageMark /></span>
           <span className="header-brand-text">Code<br />Genealogist</span>
-        </div>
+        </button>
         <div className="header-right">
           <div className="user-profile">
             <img src={user?.avatar_url} alt={user?.login} className="avatar" />
@@ -128,6 +128,38 @@ function AnalysisLoadingScreen({ stage, elapsedMs, repoName, functionName }) {
   );
 }
 
+function BackToTop() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => setVisible(window.scrollY > 500);
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <button
+      className="back-to-top"
+      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+      aria-label="Back to top"
+    >
+      ↑
+    </button>
+  );
+}
+
+function CopyToast({ toast }) {
+  if (!toast) return null;
+  return (
+    <div className={`copy-toast ${toast.ok ? 'copy-toast--ok' : 'copy-toast--error'}`} role="status" aria-live="polite">
+      {toast.message}
+    </div>
+  );
+}
+
 // Standard LCS-based unified line diff — real diff, not a set-difference approximation.
 function computeLineDiff(oldCode = '', newCode = '') {
   const a = oldCode.split('\n');
@@ -197,6 +229,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [repos, setRepos] = useState([]);
   const [filteredRepos, setFilteredRepos] = useState([]);
+  const [reposLoading, setReposLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRepo, setSelectedRepo] = useState(null);
   const [repoUrl, setRepoUrl] = useState('');
@@ -213,6 +246,31 @@ export default function App() {
   const [showComparison, setShowComparison] = useState(false);
   const [step, setStep] = useState('repos');
   const [copiedCode, setCopiedCode] = useState(null);
+  const [copyToast, setCopyToast] = useState(null);
+
+  // KEYBOARD SHORTCUTS — results dashboard only: arrows move between versions, Esc closes comparison
+  useEffect(() => {
+    if (step !== 'results' || !genealogy) return undefined;
+
+    const handleKeyDown = (e) => {
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+      if (e.key === 'Escape' && showComparison) {
+        e.preventDefault();
+        setShowComparison(false);
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        setActiveVersion((v) => Math.min(v + 1, genealogy.versions.length - 1));
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setActiveVersion((v) => Math.max(v - 1, 0));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [step, genealogy, showComparison]);
 
   // HELPER FUNCTIONS
   const getMilestoneForVersion = (versionId) => {
@@ -319,6 +377,7 @@ export default function App() {
   };
 
   const fetchRepos = async (token) => {
+    setReposLoading(true);
     try {
       const response = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
         headers: { Authorization: `token ${token}` }
@@ -334,6 +393,8 @@ export default function App() {
     } catch (err) {
       console.error('Failed to fetch repos');
       setRepos([]);
+    } finally {
+      setReposLoading(false);
     }
   };
 
@@ -435,10 +496,16 @@ export default function App() {
     }
   };
 
-  const copyToClipboard = (code, id) => {
-    navigator.clipboard.writeText(code);
-    setCopiedCode(id);
+  const copyToClipboard = async (code, id) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedCode(id);
+      setCopyToast({ ok: true, message: 'Copied to clipboard' });
+    } catch (err) {
+      setCopyToast({ ok: false, message: 'Could not copy — try selecting the code manually' });
+    }
     setTimeout(() => setCopiedCode(null), 2000);
+    setTimeout(() => setCopyToast(null), 2200);
   };
 
   if (!isLoggedIn) {
@@ -453,7 +520,7 @@ export default function App() {
     const languageCount = new Set(repos.map((r) => r.language).filter(Boolean)).size;
 
     return (
-      <AppShell user={user} onLogout={handleLogout}>
+      <AppShell user={user} onLogout={handleLogout} onHome={() => setStep('repos')}>
         <div className="repos-page">
           <div className="page-label">
             <span className="page-label-no">INDEX</span>
@@ -489,8 +556,25 @@ export default function App() {
 
           {filteredRepos.length === 0 ? (
             <div className="empty-state">
-              <h3>{searchQuery ? 'No matches' : 'Loading repositories…'}</h3>
-              <p>{searchQuery ? 'Try adjusting your search query.' : 'Fetching your GitHub repositories.'}</p>
+              {reposLoading ? (
+                <>
+                  <h3>Loading repositories…</h3>
+                  <p>Fetching your GitHub repositories.</p>
+                </>
+              ) : searchQuery ? (
+                <>
+                  <h3>No matches</h3>
+                  <p>Try adjusting your search query.</p>
+                </>
+              ) : (
+                <>
+                  <h3>No repositories found</h3>
+                  <p>
+                    This GitHub account doesn't have any repositories yet.{' '}
+                    <a href="https://github.com/new" target="_blank" rel="noreferrer">Create one</a> to get started.
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <div className="repos-grid">
@@ -523,7 +607,7 @@ export default function App() {
   // EXPLORE VIEW
   if (step === 'explore') {
     return (
-      <AppShell user={user} onLogout={handleLogout}>
+      <AppShell user={user} onLogout={handleLogout} onHome={() => setStep('repos')}>
         <button className="back-link" onClick={() => setStep('repos')} style={{margin: '24px 0 0 40px'}}>
           <ChevronRight size={18} style={{transform: 'rotate(180deg)'}} />
           Back to Repositories
@@ -560,7 +644,7 @@ export default function App() {
   const changeInfo = genealogy?.changes[activeVersion];
 
   return (
-    <AppShell user={user} onLogout={handleLogout}>
+    <AppShell user={user} onLogout={handleLogout} onHome={() => setStep('repos')}>
         <div className="results-page">
           <div className="results-trail">
             <button className="back-link results-back" onClick={() => setStep('repos')}>
@@ -771,6 +855,9 @@ export default function App() {
           functionName={functionName}
         />
       )}
+
+      <CopyToast toast={copyToast} />
+      <BackToTop />
     </AppShell>
   );
 }
